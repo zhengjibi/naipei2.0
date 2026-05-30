@@ -113,6 +113,7 @@ class NaipeiPet:
         self.dragging = False; self.drag_off_x = self.drag_off_y = 0
         self.click_history = deque(); self.rage_until = 0; self._rage_cooldown = 0
         self._last_right_time = 0
+        self._last_interaction = time.time()  # 15分钟无操作自动退出
 
         # 气泡窗口
         self._bubble_win = None
@@ -210,6 +211,9 @@ class NaipeiPet:
         if self._bubble_win: self._bubble_win.withdraw()
         self._bubble_timer = None
 
+    def _touch(self):
+        self._last_interaction = time.time()
+
     # === 事件 ===
     def _register_click(self):
         now = time.time(); self.click_history.append(now)
@@ -220,6 +224,7 @@ class NaipeiPet:
             speak("别再搞我了！", pet=self, angry=True, duration=3000)
 
     def on_scroll(self, event):
+        self._touch()
         d = 0.1 if event.delta>0 else -0.1; ns = max(0.4, min(2.5, self.scale+d))
         if abs(ns-self.scale)<0.01: return
         cx, cy = self.x+self.w//2, self.y+self.h//2
@@ -233,13 +238,14 @@ class NaipeiPet:
         self.root.geometry(f"{self.w}x{self.h}+{self.x}+{self.y}")
 
     def on_down(self, event):
-        self._register_click()
+        self._touch(); self._register_click()
         if len(self.click_history) < 3: speak("主人不要啊", pet=self, duration=1500)
         self._click_x, self._click_y = event.x_root, event.y_root
         self._moved = False; self.dragging = False
         if self.state in ("idle","walking"): self.state="clicked"; self.state_timer=0; self.frame_idx=0
 
     def on_drag(self, event):
+        self._touch()
         dx, dy = event.x_root-self._click_x, event.y_root-self._click_y
         if abs(dx)>=8 or abs(dy)>=8:
             self._moved = True
@@ -251,6 +257,7 @@ class NaipeiPet:
             self.root.geometry(f"+{self.x}+{self.y}")
 
     def on_up(self, event):
+        self._touch()
         if self._moved or self.dragging:
             self.dragging = False
             if self.y < 35: self.root.destroy(); return
@@ -261,13 +268,16 @@ class NaipeiPet:
         self.state = "jump"; self.state_timer = 0; self.frame_idx = 0
 
     def on_double(self, event):
+        self._touch()
         self.state = "happy"; self.state_timer = 0; self.frame_idx = 0
         self.grounded = False; self.vel_y = -8
 
     def on_middle(self, event):
+        self._touch()
         play_bark()
 
     def on_right(self, event):
+        self._touch()
         now = time.time()
         if now - self._last_right_time < 0.5:
             speak("拜拜", pet=self)
@@ -278,6 +288,9 @@ class NaipeiPet:
 
     # === 动画 ===
     def update_loop(self):
+        # 15分钟无交互自动退出
+        if time.time() - self._last_interaction > 900:
+            speak("拜拜", pet=self); self.root.after(800, self.root.destroy); return
         self.anim_tick += 1; self.state_timer += 1
         if not self.grounded and not self.dragging:
             self.vel_y += GRAVITY; self.y += int(self.vel_y)
